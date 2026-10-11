@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local — Peer Chat</title>
+<style>
+  :root { color-scheme: dark; --bg:#080808; --panel:#111; --line:#262626; --muted:#8b8b8b; --text:#f4f4f4; --accent:#d8ff72; }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--text); font:15px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  .app { width:min(900px,100%); min-height:100vh; margin:auto; display:flex; flex-direction:column; border-inline:1px solid #171717; }
+  header { padding:22px 22px 16px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .brand { display:flex; align-items:center; gap:11px; font-size:18px; font-weight:700; letter-spacing:-.04em; }
+  .mark { width:11px; height:11px; border-radius:50%; background:var(--accent); box-shadow:0 0 18px #d8ff7240; }
+  .status { color:var(--muted); font-size:12px; display:flex; align-items:center; gap:7px; }
+  .dot { width:7px;height:7px;border-radius:50%;background:#666; }
+  .dot.on { background:var(--accent); }
+  main { flex:1; display:grid; grid-template-columns:300px 1fr; min-height:0; }
+  aside { padding:20px; border-right:1px solid var(--line); }
+  h2 { margin:0 0 12px; font-size:12px; text-transform:uppercase; letter-spacing:.13em; color:#aaa; }
+  p { color:var(--muted); font-size:13px; margin:0 0 14px; }
+  .step { border:1px solid var(--line); border-radius:12px; padding:13px; margin:10px 0; background:#0d0d0d; }
+  .step strong { display:block; font-size:13px; margin-bottom:6px; }
+  .step p { margin:0; font-size:12px; }
+  button { font:inherit; cursor:pointer; border:1px solid #333; background:#171717; color:var(--text); border-radius:9px; padding:10px 12px; transition:background .15s,border-color .15s; }
+  button:hover { background:#222; border-color:#555; }
+  button.primary { color:#101010; background:var(--accent); border-color:var(--accent); font-weight:700; }
+  button.primary:hover { background:#e5ff9c; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .wide { width:100%; margin-top:9px; }
+  textarea { display:block; width:100%; min-height:88px; resize:vertical; border:1px solid #303030; border-radius:9px; padding:10px; color:#eee; background:#080808; font:11px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace; outline:none; }
+  textarea:focus,input:focus { border-color:#777; }
+  .tiny { font-size:11px; color:#777; margin-top:8px; }
+  .chat { display:flex; flex-direction:column; min-width:0; min-height:70vh; }
+  .chat-head { padding:18px 22px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; }
+  .chat-head strong { font-size:14px; }
+  #messages { flex:1; padding:22px; display:flex; flex-direction:column; gap:12px; overflow:auto; max-height:62vh; }
+  .empty { margin:auto; text-align:center; max-width:260px; color:#777; font-size:13px; }
+  .bubble { max-width:min(82%,520px); padding:11px 13px; border:1px solid #292929; border-radius:13px 13px 13px 4px; background:#141414; overflow-wrap:anywhere; white-space:pre-wrap; }
+  .bubble.mine { align-self:flex-end; background:#d8ff72; color:#111; border-color:#d8ff72; border-radius:13px 13px 4px 13px; }
+  .meta { font-size:10px; opacity:.6; margin-top:5px; }
+  .composer { border-top:1px solid var(--line); padding:16px; display:flex; gap:9px; }
+  input { flex:1; min-width:0; background:#101010; color:white; border:1px solid #303030; border-radius:10px; padding:12px 13px; font:inherit; outline:none; }
+  .notice { border-top:1px solid var(--line); padding:12px 20px; color:#777; font-size:11px; }
+  .hidden { display:none!important; }
+  @media(max-width:680px) {
+    main { grid-template-columns:1fr; }
+    aside { border-right:0; border-bottom:1px solid var(--line); }
+    .setup-grid { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
+    .step { margin:0; }
+    .chat { min-height:55vh; }
+    #messages { max-height:none; min-height:260px; }
+    header { padding:17px; }
+  }
+  @media(max-width:420px) { .setup-grid { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand"><span class="mark"></span> local<span style="color:#777;font-weight:400">/chat</span></div>
+    <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">Not connected</span></div>
+  </header>
+  <main>
+    <aside>
+      <h2>Connect privately</h2>
+      <p>Direct browser-to-browser chat. No account, server, or internet signaling service.</p>
+      <div class="setup-grid">
+        <div class="step">
+          <strong>01 / Start a chat</strong>
+          <p>Create an invite and send its code to the other person.</p>
+          <button class="primary wide" id="makeOffer">Create invite</button>
+        </div>
+        <div class="step">
+          <strong>02 / Join a chat</strong>
+          <p>Paste their invite, then send back your reply code.</p>
+          <textarea id="offerIn" placeholder="Paste invite code here…" aria-label="Invite code"></textarea>
+          <button class="wide" id="makeAnswer">Create reply</button>
+        </div>
+      </div>
+      <div class="step">
+        <strong>03 / Finish connection</strong>
+        <p>If you created the invite, paste the reply code here.</p>
+        <textarea id="answerIn" placeholder="Paste reply code here…" aria-label="Reply code"></textarea>
+        <button class="wide" id="acceptAnswer">Connect</button>
+      </div>
+      <div class="step hidden" id="outBox">
+        <strong id="outTitle">Your code</strong>
+        <p id="outHint">Copy this code and send it to the other person.</p>
+        <textarea id="outCode" readonly aria-label="Generated connection code"></textarea>
+        <button class="wide" id="copyCode">Copy code</button>
+      </div>
+      <p class="tiny">Both people must keep this page open. For the most reliable connection, use the same Wi-Fi network.</p>
+    </aside>
+    <section class="chat">
+      <div class="chat-head"><strong>Messages</strong><span class="status" id="peerLabel">Waiting for a peer</span></div>
+      <div id="messages" aria-live="polite">
+        <div class="empty" id="emptyState">No messages yet.<br>Connect with another device to start chatting.</div>
+      </div>
+      <form class="composer" id="sendForm">
+        <input id="messageInput" placeholder="Connect to start messaging…" autocomplete="off" disabled aria-label="Message">
+        <button class="primary" id="sendButton" disabled>Send</button>
+      </form>
+    </section>
+  </main>
+  <div class="notice">LOCAL-FIRST · No chat server · Messages are sent over a direct WebRTC data channel.</div>
+</div>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  let pc = null, channel = null, role = null;
+  const enc = obj => btoa(unescape(encodeURIComponent(JSON.stringify(obj))));
+  const dec = value => JSON.parse(decodeURIComponent(escape(atob(value.trim()))));
+  const waitForIce = peer => new Promise((resolve, reject) => {
+    if (peer.iceGatheringState === 'complete') return resolve();
+    const timeout = setTimeout(() => reject(new Error('Connection code took too long to prepare. Try again.')), 15000);
+    const change = () => {
+      if (peer.iceGatheringState === 'complete') {
+        clearTimeout(timeout); peer.removeEventListener('icegatheringstatechange', change); resolve();
+      }
+    };
+    peer.addEventListener('icegatheringstatechange', change);
+  });
+  function setStatus(text, connected=false) {
+    $('statusText').textContent = text;
+    $('statusDot').classList.toggle('on', connected);
+    $('peerLabel').textContent = connected ? 'Peer connected' : 'Waiting for a peer';
+    $('messageInput').disabled = !connected;
+    $('sendButton').disabled = !connected;
+    if (connected) $('messageInput').placeholder = 'Write a message…';
+  }
+  function addMessage(text, mine) {
+    $('emptyState')?.remove();
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble' + (mine ? ' mine' : '');
+    const body = document.createElement('div'); body.textContent = text;
+    const meta = document.createElement('div'); meta.className = 'meta';
+    meta.textContent = (mine ? 'You' : 'Peer') + ' · ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    bubble.append(body, meta); $('messages').appendChild(bubble);
+    $('messages').scrollTop = $('messages').scrollHeight;
+  }
+  function setupPeer() {
+    if (pc) { try { pc.close(); } catch {} }
+    pc = new RTCPeerConnection({iceServers:[]});
+    pc.addEventListener('connectionstatechange', () => {
+      if (pc.connectionState === 'connected') setStatus('Connected', true);
+      else if (['failed','disconnected','closed'].includes(pc.connectionState)) setStatus('Not connected');
+    });
+    pc.addEventListener('datachannel', event => attachChannel(event.channel));
+    return pc;
+  }
+  function attachChannel(ch) {
+    channel = ch;
+    channel.addEventListener('open', () => setStatus('Connected', true));
+    channel.addEventListener('close', () => setStatus('Disconnected'));
+    channel.addEventListener('message', event => addMessage(String(event.data), false));
+  }
+  function showCode(title, hint, code) {
+    $('outBox').classList.remove('hidden');
+    $('outTitle').textContent = title; $('outHint').textContent = hint;
+    $('outCode').value = code;
+    $('outBox').scrollIntoView({behavior:'smooth', block:'nearest'});
+  }
+  $('makeOffer').addEventListener('click', async () => {
+    try {
+      role = 'offer'; setStatus('Preparing invite');
+      const peer = setupPeer();
+      attachChannel(peer.createDataChannel('messages', {ordered:true}));
+      await peer.setLocalDescription(await peer.createOffer());
+      await waitForIce(peer);
+      showCode('Your invite code', 'Send this code to the person joining your chat.', enc(peer.localDescription));
+      setStatus('Invite ready');
+    } catch (e) { alert(e.message || 'Could not create invite.'); setStatus('Not connected'); }
+  });
+  $('makeAnswer').addEventListener('click', async () => {
+    try {
+      const raw = $('offerIn').value.trim();
+      if (!raw) return alert('Paste the invite code first.');
+      const offer = dec(raw);
+      if (offer.type !== 'offer' || !offer.sdp) throw new Error('That does not look like an invite code.');
+      role = 'answer'; setStatus('Preparing reply');
+      const peer = setupPeer();
+      await peer.setRemoteDescription(offer);
+      await peer.setLocalDescription(await peer.createAnswer());
+      await waitForIce(peer);
+      showCode('Your reply code', 'Send this reply code back to the person who created the invite.', enc(peer.localDescription));
+      setStatus('Reply ready');
+    } catch (e) { alert(e.message || 'Could not create reply. Check the invite code.'); setStatus('Not connected'); }
+  });
+  $('acceptAnswer').addEventListener('click', async () => {
+    try {
+      if (!pc || role !== 'offer') return alert('Create an invite first, then paste the reply code here.');
+      const answer = dec($('answerIn').value);
+      if (answer.type !== 'answer' || !answer.sdp) throw new Error('That does not look like a reply code.');
+      await pc.setRemoteDescription(answer);
+      setStatus('Connecting…');
+    } catch (e) { alert(e.message || 'Could not accept reply. Check the code.'); }
+  });
+  $('copyCode').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText($('outCode').value);
+      $('copyCode').textContent = 'Copied!';
+      setTimeout(() => $('copyCode').textContent = 'Copy code', 1400);
+    } catch {
+      $('outCode').focus(); $('outCode').select();
+      alert('Select and copy the code manually.');
+    }
+  });
+  $('sendForm').addEventListener('submit', event => {
+    event.preventDefault();
+    const input = $('messageInput'), text = input.value.trim();
+    if (!text || !channel || channel.readyState !== 'open') return;
+    channel.send(text); addMessage(text, true); input.value = ''; input.focus();
+  });
+})();
+</script>
+</body>
+</html>
